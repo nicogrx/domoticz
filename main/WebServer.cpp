@@ -3883,7 +3883,7 @@ namespace http {
 						root["message"] = "Given pin is not exported";
 						return;
 					}
-					if (!pPin->GetIsOutput()) {
+					if (pPin->GetDirection() != CGPIO_DIR_OUT) {
 						root["status"] = "ERROR";
 						root["message"] = "Given pin is not configured for output";
 						return;
