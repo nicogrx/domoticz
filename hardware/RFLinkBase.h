@@ -17,6 +17,7 @@ public:
 private:
 	void Init();
 	void ParseData(const char *data, size_t len);
+	bool DecodeThermotech(const std::string &sLine, std::string &out);
 	bool ParseLine(const std::string &sLine);
 	bool SendSwitchInt(const int ID, const int switchunit, const int BatteryLevel, const std::string &switchType, const std::string &switchcmd, const int level);
 	virtual bool WriteInt(const std::string &sendString) = 0;

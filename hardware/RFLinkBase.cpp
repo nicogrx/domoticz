@@ -356,6 +356,55 @@ static unsigned int RFLinkGetIntDecStringValue(const std::string &svalue)
 	return ret;
 }
 
+bool CRFLinkBase::DecodeThermotech(const std::string &sLine, std::string &out)
+{
+	unsigned int bitstream = 0;
+	int s, bat, sign, temp, temp_frac;
+	std::vector<std::string> results;
+	std::vector<std::string> pulses;
+	std::vector<std::string> tmp;
+
+	StringSplit(sLine, ";", results);
+
+	if (results.size() < 5)
+		return false;
+
+	StringSplit(results[3], "=", tmp);
+
+	if (tmp.size() != 2)
+		return false;
+
+	if (atoi(tmp[1].c_str()) != 50)
+		return false;
+
+	StringSplit(results[4], ",", pulses);
+	s = pulses.size();
+	for (int i = 1; i < s; i += 2) {
+		if (atoi(pulses[i].c_str()) > 3000)
+			bitstream = (bitstream << 1) | 1;
+		else
+			bitstream = (bitstream << 1);
+	}
+	bat = ((bitstream >> 8) & 1);
+	temp = ((bitstream >> 9) & 0xFF);
+	sign = temp >> 7;
+	temp = temp & 0x7F;
+	temp_frac = ((bitstream >> 1) & 0xF);
+	//_log.Log(LOG_STATUS, "Thermotech: rolling code: 0x%x, temp: %i.%i", r_code, temp, temp_frac);
+	char tmp_str[5];
+	sprintf(tmp_str, "%4x", temp * 10 + temp_frac);
+	std::string tmp_cppstr = tmp_str;
+	if (sign)
+		out = "20;DB;OTIO;ID=0001;TEMP=-" + tmp_cppstr;
+	else
+		out = "20;DB;OTIO;ID=0001;TEMP=" + tmp_cppstr;
+	if (bat)
+		out += ";BAT=OK";
+	else
+		out += ";BAT=LOW";
+	return true;
+}
+
 bool CRFLinkBase::ParseLine(const std::string &sLine)
 {
 	m_LastReceivedTime = mytime(NULL);
@@ -392,10 +441,10 @@ bool CRFLinkBase::ParseLine(const std::string &sLine)
 			WriteInt("10;VERSION;\n");  // 20;3C;VER=1.1;REV=37;BUILD=01;
 
 			//Enable DEBUG
-			//WriteInt("10;RFDEBUG=ON;\n");
+			WriteInt("10;RFDEBUG=ON;\n");
 
 			//Enable Undecoded DEBUG
-			//WriteInt("10;RFUDEBUG=ON;\n");
+			WriteInt("10;RFUDEBUG=ON;\n");
 			return true;
 		}
 		if (Name_ID.find("VER") != std::string::npos) {
@@ -440,6 +489,18 @@ bool CRFLinkBase::ParseLine(const std::string &sLine)
 
 			m_bTXokay = true; // variable to indicate an OK was received
 			return true;
+		}
+		if (Name_ID.find("DEBUG") != std::string::npos) {
+			mytime(&m_LastHeartbeatReceive);  // keep heartbeat happy
+			mytime(&m_LastHeartbeat);  // keep heartbeat happy
+			m_LastReceivedTime = m_LastHeartbeat;
+			std::string out;
+			if (DecodeThermotech(sLine, out))
+				StringSplit(out, ";", results);
+			else {
+				m_bTXokay = true; // variable to indicate an OK was received
+				return true;
+			}
 		}
 		else if (Name_ID.find("CMD UNKNOWN") != std::string::npos) {
 			_log.Log(LOG_ERROR, "RFLink: Error/Unknown command received!...");
