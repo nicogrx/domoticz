@@ -7,6 +7,7 @@
 #include "hardwaretypes.h"
 #include "../main/localtime_r.h"
 
+#define _DEBUG
 #ifdef _DEBUG
 	#define ENABLE_LOGGING
 #endif
@@ -391,10 +392,10 @@ bool CRFLinkBase::ParseLine(const std::string &sLine)
 			WriteInt("10;VERSION;\n");  // 20;3C;VER=1.1;REV=37;BUILD=01;
 
 			//Enable DEBUG
-			//write("10;RFDEBUG=ON;\n");
+			//WriteInt("10;RFDEBUG=ON;\n");
 
 			//Enable Undecoded DEBUG
-			//write("10;RFUDEBUG=ON;\n");
+			//WriteInt("10;RFUDEBUG=ON;\n");
 			return true;
 		}
 		if (Name_ID.find("VER") != std::string::npos) {
