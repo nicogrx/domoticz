@@ -1,0 +1,33 @@
+#!/bin/sh
+
+[ -f /usr/domoticz ] || exit 0
+
+start() {
+	/usr/domoticz -www 7612 -verbose 0 -daemon
+}
+
+stop() {
+	killall domoticz
+}
+
+restart() {
+        stop
+        start
+}
+
+case "$1" in
+  start)
+        start
+        ;;
+  stop)
+        stop
+        ;;
+  restart|reload)
+        restart
+        ;;
+  *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+esac
+
+exit $?
