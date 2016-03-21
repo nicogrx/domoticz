@@ -28,25 +28,40 @@ Source: http://wiringpi.com
 
 #include "DomoticzHardware.h"
 
+enum CGPIOPIN_TYPE
+{
+	CGPIOPIN_RPI = 0,
+	CGPIOPIN_U401,
+};
+
+enum CGPIO_STARTID
+{
+	CGPIO_STARTID_RPI = 0,
+	CGPIO_STARTID_U401 = 32,
+};
+
+#define CGPIO_DIR_OUT true
+#define CGPIO_DIR_IN false
+
 class CGpioPin
 {
 public:
-	CGpioPin(const int id, const std::string &label, const bool isInput, const bool isOutput, const bool isExported);
+	CGpioPin(const int id, const int type, const std::string &label,
+		const bool direction, const bool isExported);
 	~CGpioPin();
 	
 	int GetId();
+	int GetType();
 	std::string GetLabel();
-	bool GetIsInput();
-	bool GetIsOutput();
+	bool GetDirection();
 	bool GetIsExported();
-
 	std::string ToString();
 	bool operator<(const CGpioPin& pin) const { return m_id < pin.m_id; };
 
 private:
 	int m_id;
+	int m_type;
 	std::string m_label;
-	bool m_isInput;
-	bool m_isOutput;
+	bool m_direction;
 	bool m_isExported;
 };

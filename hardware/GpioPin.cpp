@@ -30,12 +30,13 @@ Source: http://wiringpi.com
 #include "../main/Logger.h"
 #include "GpioPin.h"
 
-CGpioPin::CGpioPin(const int id, const std::string &label, const bool isInput, const bool isOutput, const bool isExported):
+CGpioPin::CGpioPin(const int id, const int type,
+	const std::string &label, const bool direction, const bool isExported):
 m_label(label)
 {
 	m_id = id;
-	m_isInput = isInput;
-	m_isOutput = isOutput;
+	m_type = type;
+	m_direction = direction;
 	m_isExported = isExported;
 }
 
@@ -43,10 +44,14 @@ CGpioPin::~CGpioPin()
 {
 }
 
-
 int CGpioPin::GetId() 
 {
 	return m_id;
+}
+
+int CGpioPin::GetType() 
+{
+	return m_type;
 }
 
 std::string CGpioPin::GetLabel()
@@ -54,14 +59,9 @@ std::string CGpioPin::GetLabel()
 	return m_label;
 }
 
-bool CGpioPin::GetIsInput()
+bool CGpioPin::GetDirection()
 {
-	return m_isInput;
-}
-
-bool CGpioPin::GetIsOutput()
-{
-	return m_isOutput;
+	return m_direction;
 }
 
 bool CGpioPin::GetIsExported()
@@ -72,17 +72,13 @@ bool CGpioPin::GetIsExported()
 std::string CGpioPin::ToString()
 {
 	if (m_isExported) {
-		if (m_isInput) {
-			return m_label + " (INPUT)";
-		} else if (m_isOutput) {
+		if (m_direction) {
 			return m_label + " (OUTPUT)";
+		} else {
+			return m_label + " (INPUT)";
 		}
 	} else {
-		if (!m_isInput && !m_isOutput) {
-			return m_label + " (NOT CONFIGURED AS GPIO)";
-		} else {
-			return m_label + " (NOT EXPORTED)";
-		}
+		return m_label + " (NOT EXPORTED)";
 	}
 	return m_label + " Unknown!?";
 }

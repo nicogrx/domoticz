@@ -38,7 +38,12 @@ public:
 
 	bool WriteToHardware(const char *pdata, const unsigned char length);
 	
-	static bool InitPins();
+#ifdef WITH_GPIO_RPI
+	static bool InitRpiPins();
+#endif
+#ifdef WITH_GPIO_U401
+	static bool InitU401Pins();
+#endif
 	static std::vector<CGpioPin> GetPinList();
 	static CGpioPin* GetPPinById(int id);
 

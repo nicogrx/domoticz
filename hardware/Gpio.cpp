@@ -1,53 +1,58 @@
 /*
-This code implements basic I/O hardware via the Raspberry Pi's GPIO port, using the wiringpi library.
-WiringPi is Copyright (c) 2012-2013 Gordon Henderson. <projects@drogon.net>
-It must be installed beforehand following instructions at http://wiringpi.com/download-and-install/
+   This code implements basic I/O hardware via the Raspberry Pi's GPIO port, using the wiringpi library.
+   WiringPi is Copyright (c) 2012-2013 Gordon Henderson. <projects@drogon.net>
+   It must be installed beforehand following instructions at http://wiringpi.com/download-and-install/
 
-    Copyright (C) 2014 Vicne <vicnevicne@gmail.com>
+   Copyright (C) 2014 Vicne <vicnevicne@gmail.com>
 
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
-    MA 02110-1301 USA.
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+   MA 02110-1301 USA.
 
-This is a derivative work based on the samples included with wiringPi where distributed 
-under the GNU Lesser General Public License version 3
+   This is a derivative work based on the samples included with wiringPi where distributed 
+   under the GNU Lesser General Public License version 3
 Source: http://wiringpi.com
 
 Connection information:
-	This hardware uses the pins of the Raspebrry Pi's GPIO port.
-	Please read:
-	http://wiringpi.com/pins/special-pin-functions/
-	http://wiringpi.com/pins/ for more information
-	As we cannot assume domoticz runs as root (which is bad), we won't take advantage of wiringPi's numbering.
-	Consequently, we will always use the internal GPIO pin numbering as noted the board, including in the commands below
+This hardware uses the pins of the Raspebrry Pi's GPIO port.
+Please read:
+http://wiringpi.com/pins/special-pin-functions/
+http://wiringpi.com/pins/ for more information
+As we cannot assume domoticz runs as root (which is bad), we won't take advantage of wiringPi's numbering.
+Consequently, we will always use the internal GPIO pin numbering as noted the board, including in the commands below
 
-	Pins have to be exported and configured beforehand and upon each reboot of the Pi, like so:
-	- For output pins, only one command is needed:
-	gpio export <pin> out
+Pins have to be exported and configured beforehand and upon each reboot of the Pi, like so:
+- For output pins, only one command is needed:
+gpio export <pin> out
 
-	- For input pins, 2 commands are needed (one to export as input, and one to trigger interrupts on both edges):
-	gpio export <pin> in
-	gpio edge <pin> both
-	
-	Note: If you wire a pull-up, make sure you use 3.3V from P1-01, NOT the 5V pin ! The inputs are 3.3V max !
-*/
+- For input pins, 2 commands are needed (one to export as input, and one to trigger interrupts on both edges):
+gpio export <pin> in
+gpio edge <pin> both
+
+Note: If you wire a pull-up, make sure you use 3.3V from P1-01, NOT the 5V pin ! The inputs are 3.3V max !
+ */
 #include "stdafx.h"
 #ifdef WITH_GPIO
 #include "Gpio.h"
 #include "GpioPin.h"
 #ifndef WIN32
-	#include <wiringPi.h>
+#ifdef WITH_GPIO_RPI
+#include <wiringPi.h>
+#endif
+#ifdef WITH_GPIO_U401
+#include <u401.h>
+#endif
 #endif
 #include "../main/Helper.h"
 #include "../main/Logger.h"
@@ -57,7 +62,9 @@ Connection information:
 #include "../main/mainworker.h"
 
 #define NO_INTERRUPT	-1
-#define MAX_GPIO	31
+
+#define MAX_GPIO_RPI	32
+#define MAX_GPIO_U401	16
 
 bool m_bIsInitGPIOPins=false;
 
@@ -89,7 +96,12 @@ CGpio::CGpio(const int ID)
 
 	if (!m_bIsInitGPIOPins)
 	{
-		InitPins();
+#ifdef WITH_GPIO_RPI
+		InitRpiPins();
+#endif
+#ifdef WITH_GPIO_U401
+		InitU401Pins();
+#endif
 		m_bIsInitGPIOPins=true;
 	}
 }
@@ -103,7 +115,7 @@ CGpio::~CGpio(void)
  *********************************************************************************
  */
 
- void pushInterrupt(int gpioId) {
+void pushInterrupt(int gpioId) {
 	boost::mutex::scoped_lock lock(interruptQueueMutex);
 
 	if(std::find(gpioInterruptQueue.begin(), gpioInterruptQueue.end(), gpioId) != gpioInterruptQueue.end()) {
@@ -151,16 +163,29 @@ void interruptHandler29(void) { pushInterrupt(29); }
 void interruptHandler30(void) { pushInterrupt(30); }
 void interruptHandler31(void) { pushInterrupt(31); }
 
+void u401_interrupt_handler(int id)
+{
+	_log.Log(LOG_NORM,"%s: interrupt %i raised", __func__, id);
+	pushInterrupt(id + CGPIO_STARTID_U401);
+}
 
 bool CGpio::StartHardware()
 {
 #ifndef WIN32
 	// TODO make sure the WIRINGPI_CODES environment variable is set, otherwise WiringPi makes the program exit upon error
 	// Note : We're using the wiringPiSetupSys variant as it does not require root privilege
+#ifdef WITH_GPIO_RPI
 	if (wiringPiSetupSys() != 0) {
 		_log.Log(LOG_ERROR, "GPIO: Error initializing wiringPi !");
 		return false;
 	}
+#endif
+#ifdef WITH_GPIO_U401
+	if (u401_attach()) {
+		_log.Log(LOG_ERROR, "GPIO: Error initializing u401 !");
+		return false;
+	}
+#endif
 #endif
 	m_stoprequested=false;
 
@@ -171,46 +196,72 @@ bool CGpio::StartHardware()
 #ifndef WIN32
 	//Hook up interrupt call-backs for each input GPIO
 	for(std::vector<CGpioPin>::iterator it = pins.begin(); it != pins.end(); ++it) {
-		if (it->GetIsExported() && it->GetIsInput()) {
+#ifdef WITH_GPIO_U401
+		if (it->GetType() == CGPIOPIN_U401) {
+			_log.Log(LOG_NORM, "GPIO: set U401 GPIO %d direction to %d", it->GetId(),
+				it->GetDirection());
+			u401_gpio_setup(it->GetId() - CGPIO_STARTID_U401, it->GetDirection());
+		}
+#endif
+		if (it->GetIsExported() && (it->GetDirection() == CGPIO_DIR_IN)) {
 			_log.Log(LOG_NORM, "GPIO: Hooking interrupt handler for GPIO %d.", it->GetId());
 			switch (it->GetId()) {
-				case 0:	wiringPiISR(0, INT_EDGE_SETUP, &interruptHandler0); break;
-				case 1: wiringPiISR(1, INT_EDGE_SETUP, &interruptHandler1); break;
-				case 2: wiringPiISR(2, INT_EDGE_SETUP, &interruptHandler2); break;
-				case 3: wiringPiISR(3, INT_EDGE_SETUP, &interruptHandler3); break;	
-				case 4: wiringPiISR(4, INT_EDGE_SETUP, &interruptHandler4); break;
+#ifdef WITH_GPIO_RPI
+			case 0:	wiringPiISR(0, INT_EDGE_SETUP, &interruptHandler0); break;
+			case 1: wiringPiISR(1, INT_EDGE_SETUP, &interruptHandler1); break;
+			case 2: wiringPiISR(2, INT_EDGE_SETUP, &interruptHandler2); break;
+			case 3: wiringPiISR(3, INT_EDGE_SETUP, &interruptHandler3); break;	
+			case 4: wiringPiISR(4, INT_EDGE_SETUP, &interruptHandler4); break;
 
-				case 7: wiringPiISR(7, INT_EDGE_SETUP, &interruptHandler7); break;
-				case 8: wiringPiISR(8, INT_EDGE_SETUP, &interruptHandler8); break;
-				case 9: wiringPiISR(9, INT_EDGE_SETUP, &interruptHandler9); break;
-				case 10: wiringPiISR(10, INT_EDGE_SETUP, &interruptHandler10); break;
-				case 11: wiringPiISR(11, INT_EDGE_SETUP, &interruptHandler11); break;
+			case 7: wiringPiISR(7, INT_EDGE_SETUP, &interruptHandler7); break;
+			case 8: wiringPiISR(8, INT_EDGE_SETUP, &interruptHandler8); break;
+			case 9: wiringPiISR(9, INT_EDGE_SETUP, &interruptHandler9); break;
+			case 10: wiringPiISR(10, INT_EDGE_SETUP, &interruptHandler10); break;
+			case 11: wiringPiISR(11, INT_EDGE_SETUP, &interruptHandler11); break;
 
-				case 14: wiringPiISR(14, INT_EDGE_SETUP, &interruptHandler14); break;
-				case 15: wiringPiISR(15, INT_EDGE_SETUP, &interruptHandler15); break;
+			case 14: wiringPiISR(14, INT_EDGE_SETUP, &interruptHandler14); break;
+			case 15: wiringPiISR(15, INT_EDGE_SETUP, &interruptHandler15); break;
 
-				case 17: wiringPiISR(17, INT_EDGE_SETUP, &interruptHandler17); break;
-				case 18: wiringPiISR(18, INT_EDGE_SETUP, &interruptHandler18); break;
+			case 17: wiringPiISR(17, INT_EDGE_SETUP, &interruptHandler17); break;
+			case 18: wiringPiISR(18, INT_EDGE_SETUP, &interruptHandler18); break;
 
-				case 20: wiringPiISR(20, INT_EDGE_SETUP, &interruptHandler20); break;
-				case 21: wiringPiISR(21, INT_EDGE_SETUP, &interruptHandler21); break;
-				case 22: wiringPiISR(22, INT_EDGE_SETUP, &interruptHandler22); break;
-				case 23: wiringPiISR(23, INT_EDGE_SETUP, &interruptHandler23); break;
-				case 24: wiringPiISR(24, INT_EDGE_SETUP, &interruptHandler24); break;
-				case 25: wiringPiISR(25, INT_EDGE_SETUP, &interruptHandler25); break;
+			case 20: wiringPiISR(20, INT_EDGE_SETUP, &interruptHandler20); break;
+			case 21: wiringPiISR(21, INT_EDGE_SETUP, &interruptHandler21); break;
+			case 22: wiringPiISR(22, INT_EDGE_SETUP, &interruptHandler22); break;
+			case 23: wiringPiISR(23, INT_EDGE_SETUP, &interruptHandler23); break;
+			case 24: wiringPiISR(24, INT_EDGE_SETUP, &interruptHandler24); break;
+			case 25: wiringPiISR(25, INT_EDGE_SETUP, &interruptHandler25); break;
 
-				case 27: wiringPiISR(27, INT_EDGE_SETUP, &interruptHandler27); break;
-				case 28: wiringPiISR(28, INT_EDGE_SETUP, &interruptHandler28); break;
-				case 29: wiringPiISR(29, INT_EDGE_SETUP, &interruptHandler29); break;
-				case 30: wiringPiISR(30, INT_EDGE_SETUP, &interruptHandler30); break;
-				case 31: wiringPiISR(31, INT_EDGE_SETUP, &interruptHandler31); break;
-
-				default:
-					_log.Log(LOG_ERROR, "GPIO: Error hooking interrupt handler for unknown GPIO %d.", it->GetId());
+			case 27: wiringPiISR(27, INT_EDGE_SETUP, &interruptHandler27); break;
+			case 28: wiringPiISR(28, INT_EDGE_SETUP, &interruptHandler28); break;
+			case 29: wiringPiISR(29, INT_EDGE_SETUP, &interruptHandler29); break;
+			case 30: wiringPiISR(30, INT_EDGE_SETUP, &interruptHandler30); break;
+			case 31: wiringPiISR(31, INT_EDGE_SETUP, &interruptHandler31); break;
+#endif
+#ifdef WITH_GPIO_U401
+			case (0 + CGPIO_STARTID_U401): u401_gpio_request_irq(0, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (1 + CGPIO_STARTID_U401): u401_gpio_request_irq(1, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (2 + CGPIO_STARTID_U401): u401_gpio_request_irq(2, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (3 + CGPIO_STARTID_U401): u401_gpio_request_irq(3, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (4 + CGPIO_STARTID_U401): u401_gpio_request_irq(4, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (5 + CGPIO_STARTID_U401): u401_gpio_request_irq(5, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (6 + CGPIO_STARTID_U401): u401_gpio_request_irq(6, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (7 + CGPIO_STARTID_U401): u401_gpio_request_irq(7, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (8 + CGPIO_STARTID_U401): u401_gpio_request_irq(8, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (9 + CGPIO_STARTID_U401): u401_gpio_request_irq(9, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (10 + CGPIO_STARTID_U401): u401_gpio_request_irq(10, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (11 + CGPIO_STARTID_U401): u401_gpio_request_irq(11, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (12 + CGPIO_STARTID_U401): u401_gpio_request_irq(12, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (13 + CGPIO_STARTID_U401): u401_gpio_request_irq(13, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (14 + CGPIO_STARTID_U401): u401_gpio_request_irq(14, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+			case (15 + CGPIO_STARTID_U401): u401_gpio_request_irq(15, IRQ_RISING_FALLING, &u401_interrupt_handler); break;
+#endif
+			default:
+				 _log.Log(LOG_ERROR, "GPIO: Error hooking interrupt handler for unknown GPIO %d.", it->GetId());
 			}
 		}
 	}
-	_log.Log(LOG_NORM, "GPIO: WiringPi is now initialized");
+	_log.Log(LOG_NORM, "Gpios intialized");
 #endif
 	sOnConnected(this);
 
@@ -225,7 +276,9 @@ bool CGpio::StopHardware()
 		interruptCondition.notify_one();
 		m_thread->join();
 	}
-
+#ifdef WITH_GPIO_U401
+	u401_detach();
+#endif
 	m_bIsStarted=false;
 
 	return true;
@@ -236,20 +289,32 @@ bool CGpio::WriteToHardware(const char *pdata, const unsigned char length)
 {
 #ifndef WIN32
 	const tRBUF *pCmd = reinterpret_cast<const tRBUF*>(pdata);
+	int oldValue = 0, newValue = 0;
 
 	if ((pCmd->LIGHTING1.packettype == pTypeLighting1) && (pCmd->LIGHTING1.subtype == sTypeIMPULS)) {
 		unsigned char housecode = (pCmd->LIGHTING1.housecode);
 		if (housecode == 0) {
 			int gpioId = pCmd->LIGHTING1.unitcode;
-			_log.Log(LOG_NORM,"GPIO: WriteToHardware housecode %d, packetlength %d", pCmd->LIGHTING1.housecode, pCmd->LIGHTING1.packetlength);
-
-			int oldValue = digitalRead(gpioId);
-			_log.Log(LOG_NORM,"GPIO: pin #%d state was %d", gpioId, oldValue);
-
-			int newValue = static_cast<int>(pCmd->LIGHTING1.cmnd);
-			digitalWrite(gpioId, newValue);
-
-			_log.Log(LOG_NORM,"GPIO: WriteToHardware housecode %d, GPIO %d, previously %d, set %d", static_cast<int>(housecode), static_cast<int>(gpioId), oldValue, newValue);
+			CGpioPin *pPin = CGpio::GetPPinById(gpioId);
+			_log.Log(LOG_NORM,"GPIO: WriteToHardware housecode %d, packetlength %d",
+				pCmd->LIGHTING1.housecode, pCmd->LIGHTING1.packetlength);
+			newValue = static_cast<int>(pCmd->LIGHTING1.cmnd);
+			if (pPin->GetType() == CGPIOPIN_RPI) {
+#ifdef WITH_GPIO_RPI
+				oldValue = digitalRead(gpioId);
+				digitalWrite(gpioId, newValue);
+#endif
+			} else if (pPin->GetType() == CGPIOPIN_U401) {
+#ifdef WITH_GPIO_U401
+				u401_gpio_get_value(gpioId - CGPIO_STARTID_U401, &oldValue);
+				u401_gpio_set_value(gpioId - CGPIO_STARTID_U401, newValue);
+#endif
+			} else {
+				_log.Log(LOG_NORM, "GPIO: WriteToHardware housecode %d, gpio %d, unknown type",
+					pCmd->LIGHTING1.housecode, gpioId);
+			}
+			_log.Log(LOG_NORM,"GPIO: WriteToHardware housecode %d, GPIO %d, previously %d, set %d",
+				static_cast<int>(housecode), static_cast<int>(gpioId), oldValue, newValue);
 		}
 		else {
 			_log.Log(LOG_NORM,"GPIO: wrong housecode %d", static_cast<int>(housecode));
@@ -266,14 +331,25 @@ bool CGpio::WriteToHardware(const char *pdata, const unsigned char length)
 #endif
 }
 
-
 void CGpio::ProcessInterrupt(int gpioId) {
 #ifndef WIN32
+	int value;
 	_log.Log(LOG_NORM, "GPIO: Processing interrupt for GPIO %d...", gpioId);
 
-	// Read GPIO data
-	int value = digitalRead(gpioId);
+	CGpioPin *pPin = CGpio::GetPPinById(gpioId);
 
+	// Read GPIO data
+	if (pPin->GetType() == CGPIOPIN_RPI) {
+#ifdef WITH_GPIO_RPI
+		value = digitalRead(gpioId - CGPIO_STARTID_RPI);
+#endif
+	} else if (pPin->GetType() == CGPIOPIN_U401) {
+#ifdef WITH_GPIO_U401
+		u401_gpio_get_value(gpioId - CGPIO_STARTID_U401, &value);
+#endif
+	} else {
+		_log.Log(LOG_NORM, "GPIO: Processing interrupt %d: unknown type");
+	}
 	if (value != 0) {
 		IOPinStatusPacket.LIGHTING1.cmnd = light1_sOn;
 	}
@@ -320,10 +396,10 @@ void CGpio::Do_Work()
 			break;
 		}
 
-    	while (!triggers.empty()) {
-		interruptNumber = triggers.front();
-		triggers.erase(triggers.begin());
-		CGpio::ProcessInterrupt(interruptNumber);
+		while (!triggers.empty()) {
+			interruptNumber = triggers.front();
+			triggers.erase(triggers.begin());
+			CGpio::ProcessInterrupt(interruptNumber);
 		}
 #else
 		sleep_milliseconds(100);
@@ -334,16 +410,17 @@ void CGpio::Do_Work()
 
 /*
  * static
- * One-shot method to initialize pins
+ * One-shot method to initialize the Rpi pins
  *
  */
-bool CGpio::InitPins()
+#ifdef WITH_GPIO_RPI
+bool CGpio::InitRpiPins()
 {
 	char buf[256];
-	bool exports[MAX_GPIO+1] = { false };
+	bool exports[MAX_GPIO_RPI] = { false };
 	int gpioNumber;
 	FILE *cmd = NULL;
-	
+
 	// 1. List exports and parse the result
 #ifndef WIN32
 	cmd = popen("gpio exports", "r");
@@ -371,7 +448,7 @@ bool CGpio::InitPins()
 		if (sresults.size() >= 4)
 		{
 			gpioNumber = atoi(sresults[0].c_str());
-			if ((gpioNumber >= 0) && (gpioNumber <= MAX_GPIO)) {
+			if ((gpioNumber >= 0) && (gpioNumber < MAX_GPIO_RPI)) {
 				exports[gpioNumber] = true;
 			}
 			else {
@@ -419,14 +496,14 @@ bool CGpio::InitPins()
 
 		std::string line(buf);
 		std::vector<std::string> fields;
-		
+
 		//std::cout << "Processing line: " << line;
 		StringSplit(line, "|", fields);
 		if (fields.size()<7)
 			continue;
 
 		//std::cout << "# fields: " << fields.size() << std::endl;
-		
+
 		// trim each field
 		for (size_t i = 0; i < fields.size(); i++) {
 			fields[i]=stdstring_trim(fields[i]);
@@ -437,9 +514,9 @@ bool CGpio::InitPins()
 			// Old style
 			if (fields[0] != "wiringPi") {
 				gpioNumber = atoi(fields[1].c_str());
-				if ((gpioNumber >= 0) && (gpioNumber <= MAX_GPIO)) {
-					pins.push_back(CGpioPin(gpioNumber, "gpio" + fields[1] + " (" + fields[3] + ") on pin " + fields[2],
-							fields[4] == "IN", fields[4] == "OUT", exports[gpioNumber]));
+				if ((gpioNumber >= 0) && (gpioNumber < MAX_GPIO_RPI)) {
+					pins.push_back(CGpioPin(gpioNumber, CGPIOPIN_RPI, "gpio" + fields[1] + " (" + fields[3] + ") on pin " + fields[2],
+								(fields[4] == "OUT" ? CGPIO_DIR_OUT:CGPIO_DIR_IN), exports[gpioNumber]));
 				} else {
 					_log.Log(LOG_NORM, "GPIO: Ignoring unsupported pin '%s'", fields[1].c_str());
 				}
@@ -448,9 +525,9 @@ bool CGpio::InitPins()
 			// New style
 			if (fields[1].length() > 0) {
 				gpioNumber = atoi(fields[1].c_str());
-				if ((gpioNumber >= 0) && (gpioNumber <= MAX_GPIO)) {
-					pins.push_back(CGpioPin(gpioNumber, "gpio" + fields[1] + " (" + fields[3] + ") on pin " + fields[6],
-							(fields[4] == "IN"), (fields[4] == "OUT"), exports[gpioNumber]));
+				if ((gpioNumber >= 0) && (gpioNumber < MAX_GPIO_RPI)) {
+					pins.push_back(CGpioPin(gpioNumber, CGPIOPIN_RPI, "gpio" + fields[1] + " (" + fields[3] + ") on pin " + fields[6],
+								(fields[4] == "OUT" ? CGPIO_DIR_OUT:CGPIO_DIR_IN), exports[gpioNumber]));
 				} else {
 					_log.Log(LOG_NORM, "GPIO: Ignoring unsupported pin '%s'", fields[1].c_str());
 				}
@@ -458,9 +535,9 @@ bool CGpio::InitPins()
 
 			if (fields[12].length() > 0) {
 				gpioNumber = atoi(fields[12].c_str());
-				if ((gpioNumber >= 0) && (gpioNumber <= MAX_GPIO)) {
-					pins.push_back(CGpioPin(gpioNumber, "gpio" + fields[12] + " (" + fields[10] + ") on pin " + fields[7],
-							fields[9] == "IN", fields[9] == "OUT", exports[gpioNumber]));
+				if ((gpioNumber >= 0) && (gpioNumber < MAX_GPIO_RPI)) {
+					pins.push_back(CGpioPin(gpioNumber, CGPIOPIN_RPI, "gpio" + fields[12] + " (" + fields[10] + ") on pin " + fields[7],
+								(fields[4] == "OUT" ? CGPIO_DIR_OUT:CGPIO_DIR_IN), exports[gpioNumber]));
 				} else {
 					_log.Log(LOG_NORM, "GPIO: Ignoring unsupported pin '%s'", fields[12].c_str());
 				}
@@ -477,7 +554,7 @@ bool CGpio::InitPins()
 		// debug
 		//for(std::vector<CGpioPin>::iterator it = pins.begin(); it != pins.end(); ++it) {
 		//	CGpioPin pin=*it;
-		//	std::cout << "Pin " << pin.GetId() << " : " << pin.GetLabel() << ", " << pin.GetIsInput() << ", " << pin.GetIsOutput() << ", " << pin.GetIsExported() << std::endl;
+		//	std::cout << "Pin " << pin.GetId() << " : " << pin.GetLabel() << ", " << pin.GetDirection() << ", " << pin.GetIsExported() << std::endl;
 		//}
 	} else {
 		_log.Log(LOG_ERROR, "GPIO: Failed to detect any pins, make sure you exported them!");
@@ -485,6 +562,69 @@ bool CGpio::InitPins()
 	}
 	return true;
 }
+#endif
+
+#ifdef WITH_GPIO_U401
+bool CGpio::InitU401Pins()
+{
+	char buf[256];
+	int gpioNumber, direction;
+	FILE *cmd = NULL;
+#ifndef WIN32
+	cmd = fopen("/opt/u401_cfg.txt", "r");
+#else
+	cmd = fopen("E:\\u401_cfg.txt", "r");
+#endif
+	if (cmd == NULL) {
+		_log.Log(LOG_ERROR, "%s: Failed to open /opt/u401_cfg.txt", __func__);
+		return false;
+	}
+	while (fgets(buf, sizeof(buf), cmd) != 0) {
+		// Decode U401 GPIOs as below:
+		//
+		// GPIO,DIR
+		// 0,out,
+		// 7,in,
+
+		std::string exportLine(buf);
+		//std::cout << "Processing line: " << exportLine;
+		std::vector<std::string> sresults;
+		StringSplit(exportLine, ",", sresults);
+		if (sresults.empty())
+			continue;
+		if (sresults[0] == "GPIO")
+			continue;
+		if (sresults.size() == 3)
+		{
+			gpioNumber = atoi(sresults[0].c_str());
+			if ((gpioNumber >= 0) && (gpioNumber < MAX_GPIO_U401)) {
+				if (sresults[1] == "out")
+					pins.push_back(CGpioPin(gpioNumber + CGPIO_STARTID_U401,
+						CGPIOPIN_U401, "gpio" + sresults[0], CGPIO_DIR_OUT, true));
+				else
+					pins.push_back(CGpioPin(gpioNumber + CGPIO_STARTID_U401,
+						CGPIOPIN_U401, "gpio" + sresults[0], CGPIO_DIR_IN, true));
+			}
+			else {
+				_log.Log(LOG_NORM, "GPIO: Ignoring unsupported pin '%s'", buf);
+			}
+		}
+	}
+	fclose(cmd);
+	if (pins.size() > 0) {
+		std::sort(pins.begin(), pins.end());
+		// debug
+		//for(std::vector<CGpioPin>::iterator it = pins.begin(); it != pins.end(); ++it) {
+		//	CGpioPin pin=*it;
+		//	std::cout << "Pin " << pin.GetId() << " : " << pin.GetLabel() << ", " << pin.GetDirection() << ", " << pin.GetIsExported() << std::endl;
+		//}
+	} else {
+		_log.Log(LOG_ERROR, "%s: Failed to detect any pins", __func__);
+		return false;
+	}
+	return true;
+}
+#endif
 
 /* static */
 std::vector<CGpioPin> CGpio::GetPinList()
